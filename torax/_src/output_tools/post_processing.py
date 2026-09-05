@@ -200,6 +200,10 @@ class PostProcessedOutputs:
     beta_tor: Volume-averaged toroidal plasma beta (thermal) [dimensionless]
     beta_pol: Volume-averaged poloidal plasma beta (thermal) [dimensionless]
     beta_N: Normalized toroidal plasma beta (thermal) [dimensionless].
+    beta_pol_profile: Local poloidal beta profile [dimensionless]
+    beta_pol_prime: Derivative of local poloidal beta with respect to normalized
+      poloidal flux on the face grid: -d(beta_pol_local) / d(psi_norm)
+      [dimensionless]
     impurity_species: Dictionary of outputs for each impurity species.
     poloidal_velocity: Poloidal velocity [m/s]
     radial_electric_field: Radial electric field [V/m]
@@ -315,6 +319,8 @@ class PostProcessedOutputs:
   beta_tor: array_typing.FloatScalar
   beta_pol: array_typing.FloatScalar
   beta_N: array_typing.FloatScalar
+  beta_pol_profile: array_typing.FloatVector
+  beta_pol_prime: array_typing.FloatVector
   S_total: array_typing.FloatScalar
   impurity_species: dict[str, impurity_radiation.ImpuritySpeciesOutput]
   poloidal_velocity: array_typing.FloatVector
@@ -428,6 +434,8 @@ class PostProcessedOutputs:
         beta_tor=jnp.array(0.0, dtype=jax_utils.get_dtype()),
         beta_pol=jnp.array(0.0, dtype=jax_utils.get_dtype()),
         beta_N=jnp.array(0.0, dtype=jax_utils.get_dtype()),
+        beta_pol_profile=jnp.zeros(geo.rho.shape[0] + 2),
+        beta_pol_prime=jnp.zeros(geo.rho_face.shape),
         S_total=jnp.array(0.0, dtype=jax_utils.get_dtype()),
         impurity_species={},
         poloidal_velocity=jnp.zeros(geo.rho_face.shape),
@@ -924,6 +932,12 @@ def make_post_processed_outputs(
   beta_tor, beta_pol, beta_N = formulas.calculate_betas(  # pyrefly: ignore[not-iterable]
       sim_state.core_profiles, sim_state.geometry
   )
+  beta_pol_profile = formulas.calculate_beta_pol_profile(
+      sim_state.core_profiles, sim_state.geometry
+  )
+  beta_pol_prime = formulas.calc_beta_pol_prime(
+      sim_state.core_profiles, sim_state.geometry
+  )
 
   rotation_output = rotation.calculate_rotation(
       T_i=sim_state.core_profiles.T_i,
@@ -1016,6 +1030,8 @@ def make_post_processed_outputs(
       beta_tor=beta_tor,
       beta_pol=beta_pol,
       beta_N=beta_N,
+      beta_pol_profile=beta_pol_profile.cell_plus_boundaries(),
+      beta_pol_prime=beta_pol_prime,
       impurity_species=impurity_radiation_outputs,
       poloidal_velocity=rotation_output.poloidal_velocity.face_value(),  # pyrefly: ignore[bad-argument-type]
       radial_electric_field=rotation_output.Er.face_value(),  # pyrefly: ignore[bad-argument-type]
