@@ -108,13 +108,14 @@ class ConvertersTest(parameterized.TestCase):
     )
     np.testing.assert_array_almost_equal(
         solver_x_tuple[1].value,
-        self.base_core_profiles.n_e.value / convertors.SCALING_FACTORS['n_e'],
+        self.base_core_profiles.n_e.value
+        / convertors.COLUMN_SCALING_FACTORS['n_e'],
         decimal=10,
     )
     np.testing.assert_array_almost_equal(
         solver_x_tuple[1].right_face_constraint,  # pyrefly: ignore[bad-argument-type]
         self.base_core_profiles.n_e.right_face_constraint  # pyrefly: ignore[unsupported-operation]
-        / convertors.SCALING_FACTORS['n_e'],
+        / convertors.COLUMN_SCALING_FACTORS['n_e'],
         decimal=10,
     )
     np.testing.assert_array_almost_equal(
@@ -160,7 +161,7 @@ class ConvertersTest(parameterized.TestCase):
     )
     np.testing.assert_array_almost_equal(
         updated_cp.n_e.value,
-        x_new_n_e_val * convertors.SCALING_FACTORS['n_e'],
+        x_new_n_e_val * convertors.COLUMN_SCALING_FACTORS['n_e'],
         decimal=10,
     )
     np.testing.assert_array_almost_equal(
@@ -190,6 +191,69 @@ class ConvertersTest(parameterized.TestCase):
           getattr(self.base_core_profiles, name),
       )
 
+  def test_compute_channel_row_scale_psi(self):
+    # Span above floor
+    x_span = jnp.linspace(0.0, 5.0, 10)
+    scale = convertors.compute_channel_row_scale('psi', x_span)
+    np.testing.assert_allclose(scale, 5.0)
+
+    # Gauge invariance (shifting psi by a constant should not change scale)
+    scale_shifted = convertors.compute_channel_row_scale('psi', x_span + 100.0)
+    np.testing.assert_allclose(scale_shifted, 5.0)
+
+    # Flat or low-span profile should use floor
+    x_flat = jnp.ones(10) * 3.0
+    scale_flat = convertors.compute_channel_row_scale('psi', x_flat)
+    np.testing.assert_allclose(
+        scale_flat, convertors.CHANNEL_SCALE_FLOORS['psi']
+    )
+
+  def test_compute_channel_row_scale_temperature_and_density(self):
+    # T_e above floor
+    x_high = jnp.array([2.0, 4.0])
+    scale_high = convertors.compute_channel_row_scale('T_e', x_high)
+    np.testing.assert_allclose(scale_high, 3.0)
+
+    # T_e below floor
+    x_low = jnp.array([0.01, 0.02])
+    scale_low = convertors.compute_channel_row_scale('T_e', x_low)
+    np.testing.assert_allclose(
+        scale_low, convertors.CHANNEL_SCALE_FLOORS['T_e']
+    )
+
+    # n_e below floor
+    x_ne_low = jnp.array([0.001, 0.002])
+    scale_ne = convertors.compute_channel_row_scale('n_e', x_ne_low)
+    np.testing.assert_allclose(
+        scale_ne, convertors.CHANNEL_SCALE_FLOORS['n_e']
+    )
+
+    # Unknown channel should raise KeyError
+    x_unknown = jnp.array([0.05, 0.05])
+    with self.assertRaises(KeyError):
+      convertors.compute_channel_row_scale('unknown', x_unknown)
+
+  def test_compute_row_scaling_vector(self):
+    evolving_names = ('T_e', 'n_e', 'psi')
+    x_old = (
+        self.base_core_profiles.T_e,
+        self.base_core_profiles.n_e,
+        self.base_core_profiles.psi,
+    )
+    scales = convertors.compute_row_scaling_vector(evolving_names, x_old)
+
+    # Total length should be sum of cell values across evolving channels
+    n_cells = len(self.base_core_profiles.T_e.value)
+    self.assertEqual(scales.shape, (len(evolving_names) * n_cells,))
+
+    # Check each channel's block
+    for i, name in enumerate(evolving_names):
+      expected_scale = convertors.compute_channel_row_scale(
+          name, x_old[i].value
+      )
+      block = scales[i * n_cells : (i + 1) * n_cells]
+      np.testing.assert_allclose(block, jnp.full(n_cells, expected_scale))
 
 if __name__ == '__main__':
   absltest.main()
+

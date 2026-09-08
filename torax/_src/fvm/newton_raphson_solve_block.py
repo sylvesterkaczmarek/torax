@@ -232,6 +232,7 @@ def newton_raphson_solve_block(
       pedestal_transition_state=pedestal_transition_state,
   )
 
+  scales = convertors.compute_row_scaling_vector(evolving_names, x_old)
   root_finder = functools.partial(
       jax_root_finding.root_newton_raphson,
       fun=residual_fun,
@@ -241,6 +242,12 @@ def newton_raphson_solve_block(
       delta_reduction_factor=delta_reduction_factor,
       tau_min=tau_min,
       log_iterations=log_iterations,
+      convergence_norm=jax_root_finding.make_scaled_norm(
+          jax_root_finding.linf_norm, scales
+      ),
+      linesearch_norm=jax_root_finding.make_scaled_norm(
+          jax_root_finding.l2_norm, scales
+      ),
   )
 
   x_root, metadata = root_finder(x0=init_x_new_vec)

@@ -30,9 +30,37 @@ from torax._src.solver import linesearch
 MIN_DELTA: Final[float] = 1e-7
 
 
-def _mean_abs_norm(x: array_typing.Array) -> jax.Array:
-  """Mean of the absolute values of the elements of x, used as the default norm function for the root finder."""
-  return jnp.mean(jnp.abs(x))
+def l2_norm(x: array_typing.Array) -> jax.Array:
+  """Root-mean-square norm."""
+  return jnp.sqrt(jnp.mean(jnp.square(x)))
+
+
+def linf_norm(x: array_typing.Array) -> jax.Array:
+  """Maximum absolute value norm."""
+  return jnp.max(jnp.abs(x))
+
+
+def make_scaled_norm(
+    norm_fn: Callable[[jax.Array], jax.Array],
+    scales: jax.Array,
+) -> Callable[[jax.Array], jax.Array]:
+  """Returns a norm function scaled by characteristic scale factors.
+
+  Computes the base norm on the element-wise scaled residual:
+    norm(r) = norm_fn(r / scales)
+
+  Args:
+    norm_fn: Base norm function mapping an array to a scalar.
+    scales: Array of characteristic scale factors matching the residual shape.
+
+  Returns:
+    A norm function mapping residual -> scalar scaled norm.
+  """
+
+  def scaled_norm_fn(res: jax.Array) -> jax.Array:
+    return norm_fn(res / scales)
+
+  return scaled_norm_fn
 
 
 @jax.tree_util.register_dataclass
@@ -57,8 +85,8 @@ def root_newton_raphson(
     log_iterations: bool = False,
     use_jax_custom_root: bool = True,
     custom_jac: Callable[[jax.Array], jax.Array] | None = None,
-    linesearch_norm: Callable[[jax.Array], jax.Array] = _mean_abs_norm,
-    convergence_norm: Callable[[jax.Array], jax.Array] = _mean_abs_norm,
+    linesearch_norm: Callable[[jax.Array], jax.Array] = l2_norm,
+    convergence_norm: Callable[[jax.Array], jax.Array] = linf_norm,
 ) -> tuple[jax.Array, RootMetadata]:
   """A differentiable Newton-Raphson root finder.
 

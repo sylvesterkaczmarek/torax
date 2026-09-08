@@ -119,6 +119,44 @@ class NewtonRaphsonSolveBlockTest(parameterized.TestCase):
     chex.assert_trees_all_close(sol_np.x, sol_jax, atol=1e-9)
     self.assertEqual(int(metadata.error), 0)
 
+  def test_make_scaled_norm_math(self):
+    res = jnp.array([2.0, -6.0])
+    scales = jnp.array([1.0, 2.0])
+
+    l2_norm_fn = jax_root_finding.make_scaled_norm(
+        jax_root_finding.l2_norm, scales
+    )
+    linf_norm_fn = jax_root_finding.make_scaled_norm(
+        jax_root_finding.linf_norm, scales
+    )
+
+    # scaled = [2.0, -3.0]
+    # L2: sqrt(mean([4.0, 9.0])) = sqrt(6.5)
+    np.testing.assert_allclose(l2_norm_fn(res), np.sqrt(6.5))
+    # Linf: max(|2.0|, |-3.0|) = 3.0
+    np.testing.assert_allclose(linf_norm_fn(res), 3.0)
+
+  def test_root_newton_raphson_scaled_norms(self):
+    f_closed = functools.partial(function_to_find_root, a=0.5, b=0.1)
+    x_init = np.array((0.0, 0.0), dtype=np.float64)
+    sol_np = optimize.root(f_closed, x_init, tol=1e-9)
+
+    scales = jnp.array([2.0, 5.0], dtype=np.float64)
+    sol_jax, metadata = jax_root_finding.root_newton_raphson(
+        f_closed,
+        x_init,
+        tol=1e-9,
+        maxiter=100,
+        linesearch_norm=jax_root_finding.make_scaled_norm(
+            jax_root_finding.l2_norm, scales
+        ),
+        convergence_norm=jax_root_finding.make_scaled_norm(
+            jax_root_finding.linf_norm, scales
+        ),
+    )
+    chex.assert_trees_all_close(sol_np.x, sol_jax, atol=1e-9)
+    self.assertEqual(int(metadata.error), 0)
+
 
 if __name__ == '__main__':
   absltest.main()
